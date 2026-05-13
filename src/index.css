@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500;1,6..72,600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Newsreader", serif;
+  --font-sans: "Manrope", sans-serif;
+
+  --color-brand-primary: #a03c00;
+  --color-brand-primary-container: #c84d00;
+  --color-brand-secondary: #2c694e;
+  --color-brand-surface: #f9f9f9;
+  --color-brand-surface-low: #f3f3f3;
+  --color-brand-surface-lowest: #ffffff;
+  --color-brand-on-surface: #1a1c1c;
+  --color-brand-on-surface-variant: #594238;
+  --color-brand-outline: #8d7166;
+  --color-brand-outline-variant: #e1c0b3;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-brand-surface);
+    color: var(--color-brand-on-surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.gradient-btn {
+  background: linear-gradient(to right, var(--color-brand-primary), var(--color-brand-primary-container));
+}
+
+.glass-nav {
+  background: rgba(226, 226, 226, 0.2);
+  backdrop-filter: blur(12px);
+}
+
+.shadow-ambient {
+  box-shadow: 0 12px 40px rgba(89, 66, 56, 0.06);
+}
