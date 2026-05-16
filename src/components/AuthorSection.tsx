@@ -84,7 +84,7 @@ export default function AuthorSection() {
 
             {/* CTA Button */}
             <motion.a
-              href="https://jesusgaxiola.com"
+              href="https://buymeacoffee.com/jesusgaxiola/extras"
               target="_blank"
               rel="noopener noreferrer"
               whileHover={{ scale: 1.03, opacity: 0.88 }}

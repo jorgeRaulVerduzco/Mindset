@@ -27,11 +27,28 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const handleNavClick = (link: (typeof navLinks)[0]) => {
+  const handleNavClick = (e: React.MouseEvent, link: (typeof navLinks)[0]) => {
     if (link.type === "page" && onNavigate) {
+      e.preventDefault();
       const page = link.href === "/comparar" ? "comparar" : "home";
       onNavigate(page);
       setIsMenuOpen(false);
+    } else if (link.type === "anchor") {
+      if (currentPage === "comparar" && onNavigate) {
+        e.preventDefault();
+        onNavigate("home");
+        setIsMenuOpen(false);
+        setTimeout(() => {
+          const target = document.querySelector(link.href);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth" });
+          } else {
+            window.location.hash = link.href;
+          }
+        }, 100);
+      } else {
+        setIsMenuOpen(false);
+      }
     }
   };
 
@@ -59,9 +76,10 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
         <nav className="hidden items-center gap-8 md:flex">
           {navLinks.map((link) => (
             link.type === "page" ? (
-              <button
+              <a
                 key={link.name}
-                onClick={() => handleNavClick(link)}
+                href={link.href}
+                onClick={(e) => handleNavClick(e, link)}
                 className={`font-sans text-sm font-medium tracking-wide transition-colors ${
                   currentPage === "comparar" && link.href === "/comparar"
                     ? "text-brand-on-surface"
@@ -69,11 +87,12 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
                 }`}
               >
                 {link.name}
-              </button>
+              </a>
             ) : (
               <a
                 key={link.name}
                 href={link.href}
+                onClick={(e) => handleNavClick(e, link)}
                 className="font-sans text-sm font-medium tracking-wide text-brand-on-surface-variant transition-colors hover:text-brand-on-surface"
               >
                 {link.name}
@@ -82,6 +101,7 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
           ))}
           <a
             href="#descargar"
+            onClick={(e) => handleNavClick(e, { name: "Descargar", href: "#descargar", type: "anchor" })}
             className="rounded-md px-6 py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm hover:opacity-90 active:scale-95 transition-all"
             style={{ backgroundColor: "#E8621A" }}
           >
@@ -110,18 +130,19 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
             <nav className="flex flex-col gap-6">
               {navLinks.map((link) => (
                 link.type === "page" ? (
-                  <button
+                  <a
                     key={link.name}
-                    onClick={() => handleNavClick(link)}
+                    href={link.href}
+                    onClick={(e) => handleNavClick(e, link)}
                     className="font-sans text-lg font-medium text-brand-on-surface-variant"
                   >
                     {link.name}
-                  </button>
+                  </a>
                 ) : (
                   <a
                     key={link.name}
                     href={link.href}
-                    onClick={() => setIsMenuOpen(false)}
+                    onClick={(e) => handleNavClick(e, link)}
                     className="font-sans text-lg font-medium text-brand-on-surface-variant"
                   >
                     {link.name}
@@ -130,7 +151,7 @@ export default function Navigation({ onNavigate, currentPage }: NavigationProps)
               ))}
               <a
                 href="#descargar"
-                onClick={() => setIsMenuOpen(false)}
+                onClick={(e) => handleNavClick(e, { name: "Descargar", href: "#descargar", type: "anchor" })}
                 className="w-full rounded-md py-4 text-center text-sm font-semibold uppercase tracking-widest text-white"
                 style={{ backgroundColor: "#E8621A" }}
               >

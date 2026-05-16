@@ -1,20 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Quote, Heart, Share2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { phrases } from "../data/phrases";
+import { supabase } from "../lib/supabase";
 
 export default function QuoteCarousel() {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const phraseOfTheDayIndex = useMemo(() => {
+    const today = new Date();
+    const daysSinceEpoch = Math.floor(today.getTime() / (1000 * 60 * 60 * 24));
+    return daysSinceEpoch % phrases.length;
+  }, []);
+
+  const [currentIndex, setCurrentIndex] = useState(phraseOfTheDayIndex);
   const [direction, setDirection] = useState(0);
   const [framesRead, setFramesRead] = useState(0);
-  const [showQuoteLabel, setShowQuoteLabel] = useState(() => {
-    const today = new Date().toDateString();
-    const lastQuoteLabelDate = localStorage.getItem("quoteLabeljosDate");
-    return lastQuoteLabelDate !== today;
-  });
   const [likedPhrases, setLikedPhrases] = useState<Set<number>>(new Set());
   const [phraseLikes, setPhraseLikes] = useState<Record<number, number>>({});
   const [animatingHeartId, setAnimatingHeartId] = useState<number | null>(null);
+
+  // Debugging logs for Frase del Día
+  useEffect(() => {
+    console.log("=== DEBUG: Frase del Día ===");
+    console.log("Índice de Frase del Día:", phraseOfTheDayIndex);
+    console.log("Índice Actual (Current):", currentIndex);
+    console.log("¿Están coincidiendo?:", currentIndex === phraseOfTheDayIndex);
+  }, [currentIndex, phraseOfTheDayIndex]);
 
   // Load likes from localStorage
   useEffect(() => {
@@ -26,9 +36,15 @@ export default function QuoteCarousel() {
     const savedLikes = localStorage.getItem("likedPhrases");
     if (savedLikes) {
       try {
-        setLikedPhrases(new Set(JSON.parse(savedLikes)));
+        const parsed = JSON.parse(savedLikes);
+        if (Array.isArray(parsed)) {
+          setLikedPhrases(new Set(parsed));
+        } else {
+          localStorage.removeItem("likedPhrases");
+        }
       } catch (e) {
         console.error("Failed to load liked phrases", e);
+        localStorage.removeItem("likedPhrases");
       }
     }
 
@@ -40,6 +56,26 @@ export default function QuoteCarousel() {
         console.error("Failed to load phrase likes", e);
       }
     }
+    
+    // Fetch from Supabase
+    const fetchLikes = async () => {
+      try {
+        const { data, error } = await supabase.from('phrase_likes').select('phrase_id, likes_count');
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const fetchedLikes: Record<number, number> = {};
+          data.forEach((row: any) => {
+            fetchedLikes[row.phrase_id] = row.likes_count;
+          });
+          setPhraseLikes((prev) => ({ ...prev, ...fetchedLikes }));
+        }
+      } catch (e) {
+        console.error("Failed to load phrase likes from Supabase", e);
+      }
+    };
+    
+    fetchLikes();
   }, []);
 
   // Initialize phrase likes if not already in localStorage
@@ -55,18 +91,6 @@ export default function QuoteCarousel() {
       localStorage.setItem("phraseLikesInitialized", "true");
     }
   }, []);
-
-  // Save "Frase del Día" date label
-  useEffect(() => {
-    if (showQuoteLabel) {
-      const timer = setTimeout(() => {
-        setShowQuoteLabel(false);
-        const today = new Date().toDateString();
-        localStorage.setItem("quoteLabeljosDate", today);
-      }, 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [showQuoteLabel]);
 
   // Increment counter when viewing a phrase
   useEffect(() => {
@@ -85,26 +109,46 @@ export default function QuoteCarousel() {
     setCurrentIndex((prev) => (prev - 1 + phrases.length) % phrases.length);
   };
 
-  const handleLike = (phraseId: number) => {
+  const handleLike = async (phraseId: number) => {
     setAnimatingHeartId(phraseId);
     setTimeout(() => setAnimatingHeartId(null), 600);
 
     const isLiked = likedPhrases.has(phraseId);
     const newLikedPhrases = new Set(likedPhrases);
-    const newPhraseLikes = { ...phraseLikes };
+    
+    const currentCount = phraseLikes[phraseId] || phrases.find(p => p.id === phraseId)?.likes || 0;
+    let newCount = currentCount;
 
     if (isLiked) {
       newLikedPhrases.delete(phraseId);
-      newPhraseLikes[phraseId] = (newPhraseLikes[phraseId] || 0) - 1;
+      newCount = currentCount - 1;
     } else {
       newLikedPhrases.add(phraseId);
-      newPhraseLikes[phraseId] = (newPhraseLikes[phraseId] || 0) + 1;
+      newCount = currentCount + 1;
     }
 
     setLikedPhrases(newLikedPhrases);
-    setPhraseLikes(newPhraseLikes);
+    setPhraseLikes(prev => ({ ...prev, [phraseId]: newCount }));
     localStorage.setItem("likedPhrases", JSON.stringify(Array.from(newLikedPhrases)));
-    localStorage.setItem("phraseLikes", JSON.stringify(newPhraseLikes));
+    localStorage.setItem("phraseLikes", JSON.stringify({ ...phraseLikes, [phraseId]: newCount }));
+
+    try {
+      const { data, error } = await supabase
+        .from('phrase_likes')
+        .update({ likes_count: newCount })
+        .eq('phrase_id', phraseId)
+        .select();
+
+      if (!error && data && data.length === 0) {
+        await supabase
+          .from('phrase_likes')
+          .insert({ phrase_id: phraseId, likes_count: newCount });
+      } else if (error) {
+        throw error;
+      }
+    } catch (e) {
+      console.error("Failed to update like in Supabase", e);
+    }
   };
 
   const currentPhrase = phrases[currentIndex];
@@ -172,7 +216,7 @@ export default function QuoteCarousel() {
             <ChevronLeft size={24} />
           </button>
 
-          <div className="relative min-h-[400px] w-full overflow-hidden rounded-xl bg-brand-surface-lowest p-12 shadow-ambient">
+          <div className="relative min-h-[550px] lg:min-h-[450px] w-full overflow-hidden rounded-xl bg-brand-surface-lowest shadow-ambient">
             <AnimatePresence initial={false} custom={direction}>
               <motion.div
                 key={currentIndex}
@@ -185,11 +229,11 @@ export default function QuoteCarousel() {
                   x: { type: "spring", stiffness: 300, damping: 30 },
                   opacity: { duration: 0.2 },
                 }}
-                className="absolute inset-0 flex flex-col items-center justify-center p-12"
+                className="absolute inset-0 flex flex-col items-center justify-center px-4 py-8 sm:p-12"
               >
-                {showQuoteLabel && (
+                {currentIndex === phraseOfTheDayIndex && (
                   <p className="mb-8 font-serif text-xl italic text-brand-on-surface-variant opacity-60">
-                    Frase del Día
+                    ✨ Frase del Día
                   </p>
                 )}
                 <Quote size={48} className={`mb-8 opacity-30 ${currentPhrase.colorClass}`} />

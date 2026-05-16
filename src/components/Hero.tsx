@@ -1,6 +1,52 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown } from "lucide-react";
+import emailjs from "@emailjs/browser";
+import { supabase } from "../lib/supabase";
+
+// Initialize EmailJS with your credentials
+const EMAILJS_PUBLIC_KEY = "lbFrgh1lW7gzX1SME";
+const EMAILJS_SERVICE_ID = "service_y1d559a";
+const EMAILJS_TEMPLATE_ID = "template_9dokdnh";
+
+// Initialize emailjs
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
+const generateEmailHTML = (motivationalPhrase: string): string => {
+  // Escape any special characters that might cause issues
+  const safePhrase = motivationalPhrase.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  
+  return `<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; background: #ffffff; padding: 40px;">
+  
+  <div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="color: #E8621A; font-style: italic; font-size: 28px;">El Mindset Innovador</h1>
+    <p style="color: #888; font-size: 13px;">por Jesús A. Gaxiola · Yaqui Valley</p>
+  </div>
+
+  <div style="border-left: 4px solid #E8621A; padding-left: 20px; margin: 30px 0;">
+    <p style="color: #333; font-style: italic; font-size: 18px;">"${safePhrase}"</p>
+  </div>
+
+  <p style="color: #444; font-size: 15px; line-height: 1.7;">Gracias por unirte a la comunidad de innovadores. Tu copia de <strong>El Mindset Innovador</strong> está lista para ser leída.</p>
+
+  <div style="text-align: center; margin: 40px 0;">
+    <a href="https://drive.google.com/drive/folders/1eJL8IiGuktq77FRRhtoS9p9AFUIBoBS5" style="display: inline-block; background-color: #E8621A; color: #ffffff; padding: 16px 32px; text-decoration: none; border-radius: 6px; font-size: 15px; font-weight: bold;">📥 Descargar mi libro</a>
+  </div>
+
+  <p style="color: #999; font-size: 12px; text-align: center;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="https://drive.google.com/drive/folders/1eJL8IiGuktq77FRRhtoS9p9AFUIBoBS5" style="color: #E8621A; text-decoration: none;">https://drive.google.com/drive/folders/1eJL8IiGuktq77FRRhtoS9p9AFUIBoBS5</a></p>
+
+  <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+  <p style="color: #bbb; font-size: 11px; text-align: center;">El Mindset Innovador · por Jesús A. Gaxiola · Yaqui Valley</p>
+</div>`;
+};
+
+const MOTIVATIONAL_PHRASES = [
+  "La curiosidad es el primer acto de rebelión contra lo establecido.",
+  "La innovación no es un destino, es un viaje continuo de transformación.",
+  "El mindset innovador surge cuando cuestionamos lo que creemos saber.",
+  "La creatividad es la capacidad de conectar puntos que nadie más ve.",
+  "Transformar tu mentalidad es el primer paso para transformar el mundo.",
+];
 
 export default function Hero() {
   const [email, setEmail] = useState("");
@@ -8,6 +54,7 @@ export default function Hero() {
   const [success, setSuccess] = useState(false);
   const [shakeInput, setShakeInput] = useState(false);
   const [showArrow, setShowArrow] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -23,7 +70,7 @@ export default function Hero() {
     return emailRegex.test(email);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!email.trim()) {
       setError("Ingresa un correo válido para continuar");
       setShakeInput(true);
@@ -39,12 +86,40 @@ export default function Hero() {
     }
 
     setError("");
-    setSuccess(true);
+    setIsLoading(true);
+
+    try {
+      const randomPhrase =
+        MOTIVATIONAL_PHRASES[
+          Math.floor(Math.random() * MOTIVATIONAL_PHRASES.length)
+        ];
+      const emailHTML = generateEmailHTML(randomPhrase);
+
+      await supabase
+        .from('subscribers')
+        .upsert({ email: email }, { onConflict: 'email', ignoreDuplicates: true });
+
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        to_email: email,
+        subject: "📖 Tu libro está listo — El Mindset Innovador",
+        message: emailHTML,
+      });
+
+      setSuccess(true);
+    } catch (err: any) {
+      console.error("Error sending email:", err);
+      setError("Hubo un problema al enviar el correo. Intenta de nuevo.");
+      setShakeInput(true);
+      setTimeout(() => setShakeInput(false), 500);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleReset = () => {
     setEmail("");
     setSuccess(false);
+    setIsLoading(false);
   };
   return (
     <section id="hero" className="relative mx-auto max-w-screen-xl overflow-hidden px-8 pb-40 pt-32">
@@ -164,9 +239,14 @@ export default function Hero() {
                   {/* Download Button */}
                   <button
                     onClick={handleDownload}
-                    className="gradient-btn whitespace-nowrap rounded-md px-8 py-4 font-sans text-sm font-semibold uppercase tracking-wider text-brand-surface-lowest shadow-lg transition-transform hover:scale-[1.02] active:scale-95"
+                    disabled={isLoading}
+                    className={`gradient-btn whitespace-nowrap rounded-md px-8 py-4 font-sans text-sm font-semibold uppercase tracking-wider text-brand-surface-lowest shadow-lg transition-transform ${
+                      isLoading
+                        ? "opacity-70 cursor-not-allowed"
+                        : "hover:scale-[1.02] active:scale-95"
+                    }`}
                   >
-                    Descargar gratis
+                    {isLoading ? "Enviando... 📧" : "Descargar gratis"}
                   </button>
                 </motion.div>
               ) : (

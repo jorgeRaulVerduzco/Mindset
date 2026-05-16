@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, Star, Send } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { supabase } from "../lib/supabase";
 
 interface Review {
   id: number;
@@ -79,7 +80,53 @@ export default function ReviewsSection() {
     text: "",
   });
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [showError, setShowError] = useState("");
+  const [reviews, setReviews] = useState<Review[]>(mockReviews);
   const autoAdvanceRef = useRef<NodeJS.Timeout>();
+
+  const formatNameFromEmail = (email: string) => {
+    const namePart = email.split('@')[0];
+    const parts = namePart.split(/[\.\-_]/);
+    if (parts.length > 1) {
+      const first = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+      const lastInitial = parts[1].charAt(0).toUpperCase() + ".";
+      return `${first} ${lastInitial}`;
+    }
+    return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+  };
+
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const { data, error } = await supabase.from('reviews').select('*').eq('approved', true);
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const formattedReviews: Review[] = data.map((row: any) => ({
+            id: row.id,
+            text: row.comment,
+            rating: row.rating,
+            author: formatNameFromEmail(row.email),
+            city: "Lector Verificado",
+            section: "Reseña",
+            hasStreakBadge: false,
+            approved: row.approved
+          }));
+          
+          // Mezclamos las reseñas reales con las de prueba (mock) para asegurar que el carrusel
+          // siempre tenga suficientes elementos para la animación fluida y no se dupliquen IDs.
+          const safeMockReviews = mockReviews.map(mr => ({ ...mr, id: mr.id + 1000000 }));
+          setReviews([...formattedReviews, ...safeMockReviews]);
+        } else {
+          setReviews(mockReviews);
+        }
+      } catch (e) {
+        console.error("Error fetching reviews", e);
+        setReviews(mockReviews);
+      }
+    };
+    fetchReviews();
+  }, []);
 
   // Auto-advance carousel every 5 seconds
   useEffect(() => {
@@ -94,33 +141,66 @@ export default function ReviewsSection() {
   }, [currentIndex, isHovering, expandedCard]);
 
   const nextReview = () => {
+    if (reviews.length === 0) return;
     setDirection(1);
-    setCurrentIndex((prev) => (prev + 1) % mockReviews.length);
+    setCurrentIndex((prev) => (prev + 1) % reviews.length);
   };
 
   const prevReview = () => {
+    if (reviews.length === 0) return;
     setDirection(-1);
-    setCurrentIndex((prev) => (prev - 1 + mockReviews.length) % mockReviews.length);
+    setCurrentIndex((prev) => (prev - 1 + reviews.length) % reviews.length);
   };
 
   // Get visible cards (3 on desktop, 1 on mobile)
   const getVisibleCards = () => {
+    if (reviews.length === 0) return [];
     return [
-      mockReviews[(currentIndex) % mockReviews.length],
-      mockReviews[(currentIndex + 1) % mockReviews.length],
-      mockReviews[(currentIndex + 2) % mockReviews.length],
+      reviews[(currentIndex) % reviews.length],
+      reviews[(currentIndex + 1) % reviews.length],
+      reviews[(currentIndex + 2) % reviews.length],
     ];
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Success animation
-    setShowSuccessAnimation(true);
-    setFormData({ email: "", rating: 0, text: "" });
-    setTimeout(() => {
-      setShowSuccessAnimation(false);
-      setShowForm(false);
-    }, 2000);
+    setShowError("");
+
+    try {
+      // Verify email in subscribers
+      const { data, error } = await supabase
+        .from('subscribers')
+        .select('email')
+        .eq('email', formData.email);
+
+      if (error || !data || data.length === 0) {
+        setShowError("Este correo no tiene una descarga registrada. Descarga el libro primero.");
+        return;
+      }
+
+      // Save review
+      const { error: insertError } = await supabase
+        .from('reviews')
+        .insert({
+          email: formData.email,
+          rating: formData.rating,
+          comment: formData.text,
+          approved: false
+        });
+
+      if (insertError) throw insertError;
+
+      // Success animation
+      setShowSuccessAnimation(true);
+      setFormData({ email: "", rating: 0, text: "" });
+      setTimeout(() => {
+        setShowSuccessAnimation(false);
+        setShowForm(false);
+      }, 2000);
+    } catch (e) {
+      console.error("Error submitting review", e);
+      setShowError("Hubo un error al enviar tu reseña. Intenta de nuevo.");
+    }
   };
 
   return (
@@ -233,8 +313,9 @@ export default function ReviewsSection() {
               </AnimatePresence>
 
               {/* Mobile - Show only first visible card */}
+              {reviews.length > 0 && (
               <motion.div
-                key={`mobile-${mockReviews[currentIndex].id}`}
+                key={`mobile-${reviews[currentIndex].id}`}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.95 }}
@@ -242,17 +323,18 @@ export default function ReviewsSection() {
                 className="md:hidden"
               >
                 <ReviewCard
-                  review={mockReviews[currentIndex]}
-                  isExpanded={expandedCard === mockReviews[currentIndex].id}
+                  review={reviews[currentIndex]}
+                  isExpanded={expandedCard === reviews[currentIndex].id}
                   onToggleExpand={() =>
                     setExpandedCard(
-                      expandedCard === mockReviews[currentIndex].id
+                      expandedCard === reviews[currentIndex].id
                         ? null
-                        : mockReviews[currentIndex].id
+                        : reviews[currentIndex].id
                     )
                   }
                 />
               </motion.div>
+              )}
             </div>
           </div>
 
@@ -269,7 +351,7 @@ export default function ReviewsSection() {
 
         {/* Mobile Navigation Dots */}
         <div className="mt-8 flex justify-center gap-2 md:hidden">
-          {mockReviews.map((_, idx) => (
+          {reviews.map((_, idx) => (
             <motion.button
               key={idx}
               onClick={() => {
@@ -368,14 +450,29 @@ export default function ReviewsSection() {
                 <textarea
                   required
                   value={formData.text}
-                  onChange={(e) =>
-                    setFormData({ ...formData, text: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setFormData({ ...formData, text: e.target.value });
+                    setShowError("");
+                  }}
                   placeholder="¿Qué frase o sección te impactó más?"
                   rows={4}
                   className="w-full rounded-lg border border-brand-outline-variant/30 bg-brand-surface-lowest p-4 font-sans text-brand-on-surface outline-none transition-colors focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 placeholder:opacity-50"
                 />
               </div>
+
+              {/* Error Message */}
+              <AnimatePresence>
+                {showError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="text-center font-sans text-sm font-semibold text-red-500"
+                  >
+                    {showError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
 
               {/* Buttons */}
               <div className="flex gap-4">
@@ -407,13 +504,16 @@ export default function ReviewsSection() {
       <AnimatePresence>
         {showSuccessAnimation && (
           <motion.div
-            initial={{ x: -100, y: 0, opacity: 0, rotate: -20 }}
-            animate={{ x: 1000, y: -500, opacity: 1, rotate: 45 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 2, ease: "easeIn" }}
-            className="pointer-events-none fixed left-1/2 top-1/2 z-50 text-4xl"
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: 20 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
           >
-            ✈️
+            <div className="rounded-2xl bg-brand-surface-lowest p-8 shadow-xl text-center max-w-sm">
+              <div className="text-5xl mb-4">🎉</div>
+              <h3 className="mb-2 font-serif text-2xl italic text-brand-primary">¡Gracias por tu reseña!</h3>
+              <p className="font-sans text-brand-on-surface-variant">Será publicada pronto.</p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -438,7 +538,7 @@ function ReviewCard({ review, isExpanded, onToggleExpand }: ReviewCardProps) {
     <motion.div
       layoutId={`card-${review.id}`}
       whileHover={{ y: -8 }}
-      click={() => onToggleExpand()}
+      onClick={() => onToggleExpand()}
       className="group h-full cursor-pointer rounded-xl bg-brand-surface-lowest p-6 shadow-ambient transition-shadow hover:shadow-lg"
     >
       {/* Stars */}
